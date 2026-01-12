@@ -6,7 +6,7 @@
 # Ollama server URL
 url = "http://localhost:11434"
 # Model name to use for translation
-model = "llama2"
+model = "llama3.1"
 # Request timeout in seconds
 timeout = 300
 # Maximum retries for failed requests
@@ -46,4 +46,4 @@ parallel_paragraphs = 0
 # Enable streaming responses from LLM
 streaming = true
 # Maximum context window size (in tokens, approximate)
-max_context_tokens = 4000
+max_context_tokens = 4096
