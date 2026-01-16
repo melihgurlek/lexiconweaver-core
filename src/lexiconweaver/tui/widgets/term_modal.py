@@ -61,6 +61,8 @@ class TermModal(Container):
         """Initialize the term modal."""
         super().__init__(*args, **kwargs)
         self.source_term = source_term
+        self._initial_target_term = target_term
+        self._initial_category = category
         self._target_term_input: Input | None = None
         self._category_select: Select | None = None
         self._is_regex = is_regex
@@ -71,7 +73,7 @@ class TermModal(Container):
             yield Label(f"Source Term: {self.source_term}", id="source_label")
             yield Label("Target Term:", classes="label")
             yield Input(
-                value="",
+                value=self._initial_target_term,
                 placeholder="Enter translation...",
                 id="target_input",
             )
@@ -91,6 +93,15 @@ class TermModal(Container):
         """Called when the modal is mounted."""
         self._target_term_input = self.query_one("#target_input", Input)
         self._category_select = self.query_one("#category_select", Select)
+        
+        # Set the initial category value if provided
+        if self._initial_category and self._category_select:
+            # Find the matching option in TERM_CATEGORIES
+            for option_value, option_label in TERM_CATEGORIES:
+                if option_label == self._initial_category:
+                    self._category_select.value = option_value
+                    break
+        
         self._target_term_input.focus()
 
     def on_button_pressed(self, event: Button.Pressed) -> None:
@@ -110,9 +121,16 @@ class TermModal(Container):
         target_term = self._target_term_input.value if self._target_term_input else ""
         category = ""
         if self._category_select and self._category_select.value:
-            # When allow_blank=True, value is a tuple (label, value) when selected, or Select.BLANK when blank
-            if isinstance(self._category_select.value, tuple):
-                category = self._category_select.value[0]
+            # Textual Select returns the value (second element of tuple) as a string when selected
+            # or Select.BLANK when blank (with allow_blank=True)
+            select_value = self._category_select.value
+            if isinstance(select_value, tuple):
+                # If it's a tuple, take the first element (label)
+                category = select_value[0]
+            elif isinstance(select_value, str):
+                # If it's a string (the value), use it directly
+                category = select_value
+            # If it's Select.BLANK or None, category remains empty string
 
         self.post_message(
             self.TermSaved(

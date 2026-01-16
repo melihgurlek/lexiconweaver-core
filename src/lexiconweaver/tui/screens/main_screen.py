@@ -270,26 +270,56 @@ class MainScreen(Screen):
             logger.debug("Modal already open, ignoring duplicate request", term=source_term)
             return
         
-        modal = TermModal(source_term=source_term)
+        # Check if term already exists in database to load its data
+        target_term = ""
+        category = ""
+        is_regex = False
+        try:
+            existing_term = GlossaryTerm.get_or_none(
+                project=self.project,
+                source_term=source_term
+            )
+            if existing_term:
+                target_term = existing_term.target_term or ""
+                category = existing_term.category or ""
+                is_regex = existing_term.is_regex or False
+        except Exception as e:
+            logger.debug("Error loading existing term data", term=source_term, error=str(e))
+        
+        modal = TermModal(
+            source_term=source_term,
+            target_term=target_term,
+            category=category,
+            is_regex=is_regex
+        )
         self.mount(modal)
 
     def on_term_modal_term_saved(self, message: TermModal.TermSaved) -> None:
         """Handle term save from modal."""
         try:
-            GlossaryTerm.get_or_create(
+            # Use update_or_create to handle both new and existing terms
+            # This ensures category updates work for existing terms
+            term, created = GlossaryTerm.get_or_create(
                 project=self.project,
                 source_term=message.source_term,
                 defaults={
                     "target_term": message.target_term,
-                    "category": message.category,
+                    "category": message.category if message.category else None,
                     "is_regex": message.is_regex,
                 },
             )
+            # Update existing term if it already exists
+            if not created:
+                term.target_term = message.target_term
+                term.category = message.category if message.category else None
+                term.is_regex = message.is_regex
+                term.save()
+            
             self._confirmed_terms.add(message.source_term)
             self._candidate_terms.discard(message.source_term)
             self._update_highlights()
             self._safe_update_status(f"Saved term: {message.source_term} -> {message.target_term}")
-            logger.debug("Term saved", source=message.source_term, target=message.target_term)
+            logger.debug("Term saved", source=message.source_term, target=message.target_term, category=message.category)
         except Exception as e:
             logger.exception("Error saving term", source=message.source_term, error=str(e))
             self._safe_update_status(f"Error saving term: {e}")
