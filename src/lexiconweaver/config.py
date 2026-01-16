@@ -8,6 +8,8 @@ import toml
 from pydantic import Field, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
+from lexiconweaver.exceptions import ConfigurationError
+
 
 class OllamaConfig(BaseSettings):
     """Configuration for Ollama LLM connection."""
@@ -147,15 +149,54 @@ class Config(BaseSettings):
         data_dir.mkdir(parents=True, exist_ok=True)
         return data_dir / "lexiconweaver.db"
 
+    @staticmethod
+    def get_default_log_file_path() -> Path:
+        """Get the default log file path."""
+        if os.name == "nt":  # Windows
+            data_dir = Path(os.getenv("LOCALAPPDATA", "")) / "lexiconweaver"
+        else:  # Unix-like
+            data_dir = Path.home() / ".local" / "share" / "lexiconweaver"
+
+        data_dir.mkdir(parents=True, exist_ok=True)
+        return data_dir / "lexiconweaver.log"
+
     def get_database_path(self) -> Path:
         """Get the resolved database path."""
+        # #region agent log
+        import json; log_data = {"sessionId":"debug-session","runId":"post-fix","hypothesisId":"A","location":"config.py:161","message":"get_database_path entry","data":{"db_path_str":str(self.database.path),"cwd":str(Path.cwd())},"timestamp":int(__import__("time").time()*1000)}; open("/home/melihgurlek/Code/WeaveCodex/.cursor/debug.log","a").write(json.dumps(log_data)+"\n")
+        # #endregion
         db_path_str = self.database.path
+        
+        # Fix: Detect and reject system PATH environment variable
+        # System PATH on Unix contains ':' separators, on Windows ';' separators
+        # A valid database path should not look like a PATH variable
+        if db_path_str:
+            # Check if this looks like a system PATH (contains path separators)
+            path_separator = ";" if os.name == "nt" else ":"
+            if path_separator in db_path_str:
+                # This is likely the system PATH, not a database path - use default instead
+                # #region agent log
+                log_data = {"sessionId":"debug-session","runId":"post-fix","hypothesisId":"A","location":"config.py:171","message":"get_database_path rejecting system PATH","data":{"db_path_str":str(db_path_str[:100])},"timestamp":int(__import__("time").time()*1000)}; open("/home/melihgurlek/Code/WeaveCodex/.cursor/debug.log","a").write(json.dumps(log_data)+"\n")
+                # #endregion
+                db_path_str = ""  # Reset to empty to use default
+        
         if not db_path_str:
-            return self.get_default_database_path()
+            result = self.get_default_database_path()
+            # #region agent log
+            log_data = {"sessionId":"debug-session","runId":"post-fix","hypothesisId":"A","location":"config.py:178","message":"get_database_path using default","data":{"result_path":str(result)},"timestamp":int(__import__("time").time()*1000)}; open("/home/melihgurlek/Code/WeaveCodex/.cursor/debug.log","a").write(json.dumps(log_data)+"\n")
+            # #endregion
+            return result
 
         db_path = Path(db_path_str)
         if db_path.is_absolute():
+            # #region agent log
+            log_data = {"sessionId":"debug-session","runId":"post-fix","hypothesisId":"A","location":"config.py:184","message":"get_database_path absolute path","data":{"result_path":str(db_path)},"timestamp":int(__import__("time").time()*1000)}; open("/home/melihgurlek/Code/WeaveCodex/.cursor/debug.log","a").write(json.dumps(log_data)+"\n")
+            # #endregion
             return db_path
         # If relative, resolve relative to current working directory
-        return Path.cwd() / db_path
+        result = Path.cwd() / db_path
+        # #region agent log
+        log_data = {"sessionId":"debug-session","runId":"post-fix","hypothesisId":"A","location":"config.py:190","message":"get_database_path relative path resolved","data":{"result_path":str(result),"cwd":str(Path.cwd()),"relative":str(db_path)},"timestamp":int(__import__("time").time()*1000)}; open("/home/melihgurlek/Code/WeaveCodex/.cursor/debug.log","a").write(json.dumps(log_data)+"\n")
+        # #endregion
+        return result
 

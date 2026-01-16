@@ -3,7 +3,7 @@
 from pathlib import Path
 from typing import Optional
 
-from textual.app import App, ComposeResult
+from textual.app import App
 
 from lexiconweaver.config import Config
 from lexiconweaver.database.models import Project
@@ -36,18 +36,18 @@ class LexiconWeaverApp(App):
         self._text = text
         self._text_file = text_file
 
-    def compose(self) -> ComposeResult:
-        """Compose the application."""
-        yield MainScreen(
-            config=self.config,
-            project=self.project,
-            text=self._text,
-            text_file=self._text_file,
-        )
-
     def on_mount(self) -> None:
         """Called when the app is mounted."""
         logger.info("LexiconWeaver TUI started", project=self.project.title)
+        # Push the main screen explicitly
+        self.push_screen(
+            MainScreen(
+                config=self.config,
+                project=self.project,
+                text=self._text,
+                text_file=self._text_file,
+            )
+        )
 
     def action_quit(self) -> None:
         """Handle quit action."""

@@ -211,14 +211,27 @@ class Scout(BaseEngine):
 
     def _get_ignored_terms(self) -> set[str]:
         """Get ignored terms for the current project."""
+        # #region agent log
+        import json; log_data = {"sessionId":"debug-session","runId":"run1","hypothesisId":"C","location":"scout.py:212","message":"_get_ignored_terms entry","data":{"project_id":str(self.project.id) if self.project else None},"timestamp":int(__import__("time").time()*1000)}; open("/home/melihgurlek/Code/WeaveCodex/.cursor/debug.log","a").write(json.dumps(log_data)+"\n")
+        # #endregion
         if self.project is None:
+            # #region agent log
+            log_data = {"sessionId":"debug-session","runId":"run1","hypothesisId":"C","location":"scout.py:215","message":"_get_ignored_terms no project","data":{},"timestamp":int(__import__("time").time()*1000)}; open("/home/melihgurlek/Code/WeaveCodex/.cursor/debug.log","a").write(json.dumps(log_data)+"\n")
+            # #endregion
             return set()
 
         try:
             ignored = IgnoredTerm.select().where(
                 IgnoredTerm.project == self.project
             )
-            return {term.term.lower() for term in ignored}
+            result = {term.term.lower() for term in ignored}
+            # #region agent log
+            log_data = {"sessionId":"debug-session","runId":"run1","hypothesisId":"C","location":"scout.py:221","message":"_get_ignored_terms success","data":{"count":str(len(result))},"timestamp":int(__import__("time").time()*1000)}; open("/home/melihgurlek/Code/WeaveCodex/.cursor/debug.log","a").write(json.dumps(log_data)+"\n")
+            # #endregion
+            return result
         except Exception as e:
+            # #region agent log
+            log_data = {"sessionId":"debug-session","runId":"run1","hypothesisId":"D","location":"scout.py:223","message":"_get_ignored_terms error","data":{"error":str(e),"error_type":str(type(e).__name__)},"timestamp":int(__import__("time").time()*1000)}; open("/home/melihgurlek/Code/WeaveCodex/.cursor/debug.log","a").write(json.dumps(log_data)+"\n")
+            # #endregion
             logger.warning("Failed to load ignored terms", error=str(e))
             return set()

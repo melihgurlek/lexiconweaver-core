@@ -11,16 +11,33 @@ from structlog.stdlib import LoggerFactory
 from lexiconweaver.config import Config
 
 
-def configure_logging(config: Config) -> None:
-    """Configure structured logging based on configuration."""
+def configure_logging(config: Config, quiet: bool = False) -> None:
+    """Configure structured logging based on configuration.
+    
+    Args:
+        config: Configuration object
+        quiet: If True, suppress console output (useful for TUI mode)
+    """
     log_level = getattr(logging, config.logging.level.upper(), logging.INFO)
 
     # Configure standard library logging
-    logging.basicConfig(
-        format="%(message)s",
-        stream=sys.stdout,
-        level=log_level,
-    )
+    # In quiet mode (TUI), don't output to stdout to avoid conflicts with TUI
+    if not quiet:
+        logging.basicConfig(
+            format="%(message)s",
+            stream=sys.stdout,
+            level=log_level,
+            force=True,  # Allow reconfiguration
+        )
+    else:
+        # In quiet mode, configure logging without console output
+        # Remove any existing handlers first
+        root_logger = logging.getLogger()
+        for handler in root_logger.handlers[:]:
+            root_logger.removeHandler(handler)
+        
+        # Configure root logger without stream handlers
+        root_logger.setLevel(log_level)
 
     # Configure structlog
     processors = [
@@ -34,7 +51,13 @@ def configure_logging(config: Config) -> None:
         structlog.processors.format_exc_info,
     ]
 
-    if config.logging.json_logging:
+    # In quiet mode, use JSON renderer (which goes through logging handlers)
+    # or a null renderer, so console output is suppressed
+    if quiet:
+        # Use JSON renderer in quiet mode - it will respect logging handlers
+        # Since we removed stdout handlers, this won't output to console
+        processors.append(structlog.processors.JSONRenderer())
+    elif config.logging.json_logging:
         processors.append(structlog.processors.JSONRenderer())
     else:
         processors.append(structlog.dev.ConsoleRenderer())
@@ -47,9 +70,15 @@ def configure_logging(config: Config) -> None:
         cache_logger_on_first_use=True,
     )
 
-    # Configure file logging if specified
+    # Configure file logging - use default path if not specified
+    log_file_path: Path | None = None
     if config.logging.log_file:
         log_file_path = Path(config.logging.log_file)
+    else:
+        # Use default log file path if not configured
+        log_file_path = Config.get_default_log_file_path()
+    
+    if log_file_path:
         log_file_path.parent.mkdir(parents=True, exist_ok=True)
 
         file_handler = logging.FileHandler(log_file_path)

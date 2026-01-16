@@ -137,3 +137,7 @@ logs/
 
 # Config files with secrets (if any)
 config.local.toml
+
+# Project specific
+playground/
+*.txt

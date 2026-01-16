@@ -1,6 +1,7 @@
 """Modal dialog for editing term definitions."""
 
 from textual.containers import Container, Horizontal, Vertical
+from textual.message import Message
 from textual.widgets import Button, Input, Label, Select
 
 TERM_CATEGORIES = [
@@ -77,7 +78,7 @@ class TermModal(Container):
             yield Label("Category:", classes="label")
             yield Select(
                 options=TERM_CATEGORIES,
-                value="",
+                allow_blank=True,
                 id="category_select",
             )
             yield Label("Scope: Global (all chapters)", id="scope_label")
@@ -106,34 +107,32 @@ class TermModal(Container):
 
     def _save_term(self) -> None:
         """Save the term and close modal."""
-        from textual.message import Message
-
         target_term = self._target_term_input.value if self._target_term_input else ""
-        category = (
-            self._category_select.value[0] if self._category_select and self._category_select.value else ""
-        )
+        category = ""
+        if self._category_select and self._category_select.value:
+            # When allow_blank=True, value is a tuple (label, value) when selected, or Select.BLANK when blank
+            if isinstance(self._category_select.value, tuple):
+                category = self._category_select.value[0]
 
         self.post_message(
             self.TermSaved(
-                self, source_term=self.source_term, target_term=target_term, category=category, is_regex=self._is_regex
+                source_term=self.source_term, target_term=target_term, category=category, is_regex=self._is_regex
             )
         )
         self.remove()
 
     def _cancel(self) -> None:
         """Cancel and close modal."""
-        from textual.message import Message
-
-        self.post_message(self.Cancelled(self))
+        self.post_message(self.Cancelled())
         self.remove()
 
     class TermSaved(Message):
         """Message sent when term is saved."""
 
         def __init__(
-            self, sender, source_term: str, target_term: str, category: str, is_regex: bool
+            self, source_term: str, target_term: str, category: str, is_regex: bool
         ) -> None:
-            super().__init__(sender)
+            super().__init__()
             self.source_term = source_term
             self.target_term = target_term
             self.category = category
@@ -142,5 +141,5 @@ class TermModal(Container):
     class Cancelled(Message):
         """Message sent when modal is cancelled."""
 
-        def __init__(self, sender) -> None:
-            super().__init__(sender)
+        def __init__(self) -> None:
+            super().__init__()

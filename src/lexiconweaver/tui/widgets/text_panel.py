@@ -27,6 +27,12 @@ class TextPanel(Static):
         super().__init__(*args, **kwargs)
         self._text = text
         self._highlights = highlights or []
+        # Update display with initial content
+        if text:
+            self._update_display()
+        else:
+            # Show placeholder if no text
+            self.update("No text loaded. Press 'r' to run Scout or load a file.")
 
     def set_text(self, text: str) -> None:
         """Set the text content."""
