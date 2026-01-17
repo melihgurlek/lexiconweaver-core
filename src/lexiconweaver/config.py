@@ -17,7 +17,7 @@ class OllamaConfig(BaseSettings):
     model_config = SettingsConfigDict(extra="allow")
 
     url: str = Field(default="http://localhost:11434", description="Ollama server URL")
-    model: str = Field(default="llama2", description="Model name to use")
+    model: str = Field(default="llama3.1:latest", description="Model name to use")
     timeout: int = Field(default=300, ge=1, description="Request timeout in seconds")
     max_retries: int = Field(default=3, ge=0, le=10, description="Maximum retries")
 
@@ -87,6 +87,15 @@ class WeaverConfig(BaseSettings):
     )
     max_context_tokens: int = Field(
         default=4000, ge=1000, description="Maximum context window size"
+    )
+    translation_batch_max_chars: int = Field(
+        default=2000, ge=500, description="Maximum characters per translation batch"
+    )
+    translation_context_sentences: int = Field(
+        default=2, ge=0, le=10, description="Number of sentences to keep as context between batches"
+    )
+    translation_auto_export: bool = Field(
+        default=True, description="Automatically export translation when complete"
     )
 
 

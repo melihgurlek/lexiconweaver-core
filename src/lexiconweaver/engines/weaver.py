@@ -82,6 +82,39 @@ class Weaver(BaseEngine):
         if self.cache_enabled:
             self._store_in_cache(paragraph, full_translation)
 
+    async def translate_batch_streaming(
+        self, batch: str, context: str = ""
+    ) -> AsyncIterator[str]:
+        """Translate a batch with streaming response, optionally including context.
+        
+        Args:
+            batch: The text batch to translate
+            context: Optional context from previous batch (e.g., last 2 sentences)
+            
+        Yields:
+            Translation chunks as they arrive from the LLM
+        """
+        text_to_translate = f"{context}\n\n{batch}" if context else batch
+        
+        mini_glossary = self._build_mini_glossary(text_to_translate)
+        
+        prompt = self._build_prompt_with_context(text_to_translate, mini_glossary, context)
+        
+        full_translation = ""
+        async for chunk in self._call_ollama_streaming(prompt):
+            full_translation += chunk
+            yield chunk
+        
+        # Extract only the new translation (remove context translation if present)
+        # This is a simple heuristic: if context was provided, the translation
+        # might include it. We'll return the full translation and let the caller
+        # handle context removal if needed.
+        
+        self._verify_translation(text_to_translate, full_translation, mini_glossary)
+        
+        if self.cache_enabled:
+            self._store_in_cache(batch, full_translation)
+
     async def translate_text(
         self, text: str, use_cache: bool = True
     ) -> str:
@@ -155,12 +188,45 @@ class Weaver(BaseEngine):
 
         prompt = f"""You are a professional translator specializing in fantasy and web novels.
 
-Your task is to translate the following text while maintaining consistency with specialized terminology.
+Your task is to translate the following text into Turkish while maintaining consistency with specialized terminology.
 
 {glossary_block}Translate the following paragraph. You must use the glossary terms exactly as provided. Maintain the original meaning, tone, and style.
 
 Paragraph to translate:
 {paragraph}
+
+Translation:"""
+
+        return prompt
+
+    def _build_prompt_with_context(
+        self, text: str, mini_glossary: dict[str, str], context: str = ""
+    ) -> str:
+        """Build the translation prompt with context awareness."""
+        glossary_block = ""
+        if mini_glossary:
+            glossary_lines = [
+                f"- {source}: {target}" for source, target in mini_glossary.items()
+            ]
+            glossary_block = "Glossary (use these exact translations):\n" + "\n".join(glossary_lines) + "\n\n"
+
+        context_note = ""
+        if context:
+            context_note = f"""Note: The text below includes context from the previous section for coherence. Translate the entire text, maintaining continuity with the previous translation.
+
+Context (already translated, for reference only):
+{context}
+
+"""
+
+        prompt = f"""You are a professional translator specializing in fantasy and web novels.
+
+Your task is to translate the following text into Turkish while maintaining consistency with specialized terminology.
+
+{glossary_block}{context_note}Translate the following text. You must use the glossary terms exactly as provided. Maintain the original meaning, tone, and style. Ensure the translation flows naturally with the context provided above.
+
+Text to translate:
+{text}
 
 Translation:"""
 

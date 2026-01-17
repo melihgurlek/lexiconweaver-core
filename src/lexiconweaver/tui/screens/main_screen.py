@@ -9,6 +9,7 @@ from lexiconweaver.config import Config
 from lexiconweaver.database.models import GlossaryTerm, Project
 from lexiconweaver.engines.scout import CandidateTerm, Scout
 from lexiconweaver.logging_config import get_logger
+from lexiconweaver.tui.screens.translation_screen import TranslationScreen
 from lexiconweaver.tui.widgets.candidate_list import CandidateList
 from lexiconweaver.tui.widgets.term_modal import TermModal
 from lexiconweaver.tui.widgets.text_panel import TextPanel
@@ -238,7 +239,18 @@ class MainScreen(Screen):
 
     def action_translate(self) -> None:
         """Start translation process."""
-        self._safe_update_status("Translation not yet implemented in TUI")
+        if not self._text:
+            self._safe_update_status("No text to translate")
+            return
+        
+        # Push translation screen
+        translation_screen = TranslationScreen(
+            config=self.config,
+            project=self.project,
+            text=self._text,
+            text_file=self._text_file,
+        )
+        self.app.push_screen(translation_screen)
 
     def _safe_update_status(self, message: str) -> None:
         """Update the status bar safely, handling cases where it may not be ready."""
