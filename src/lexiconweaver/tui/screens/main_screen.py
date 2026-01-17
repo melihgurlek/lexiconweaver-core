@@ -1,7 +1,7 @@
 """Main screen for the LexiconWeaver TUI."""
 
 from pathlib import Path
-from textual.containers import Container, Horizontal, Vertical
+from textual.containers import Container, Horizontal, ScrollableContainer, Vertical
 from textual.screen import Screen
 from textual.widgets import Footer, Header, Static
 
@@ -12,6 +12,7 @@ from lexiconweaver.logging_config import get_logger
 from lexiconweaver.tui.widgets.candidate_list import CandidateList
 from lexiconweaver.tui.widgets.term_modal import TermModal
 from lexiconweaver.tui.widgets.text_panel import TextPanel
+from lexiconweaver.utils.cache import get_cache
 from lexiconweaver.utils.highlighting import highlight_terms
 
 logger = get_logger(__name__)
@@ -48,6 +49,10 @@ class MainScreen(Screen):
         min-height: 5;
     }
 
+    #text_scroll_container {
+        height: 1fr;
+    }
+
     #candidate_container {
         width: 1fr;
         border: solid $primary;
@@ -80,6 +85,7 @@ class MainScreen(Screen):
         self._candidates: list[CandidateTerm] = []
         self._confirmed_terms: set[str] = set()
         self._candidate_terms: set[str] = set()
+        self._cache = get_cache()
 
     def compose(self):
         """Compose the screen widgets."""
@@ -87,7 +93,8 @@ class MainScreen(Screen):
         with Horizontal():
             with Vertical(id="text_container"):
                 yield Static("Chapter Text", classes="section_title")
-                yield TextPanel(self._text, id="text_panel")
+                with ScrollableContainer(id="text_scroll_container"):
+                    yield TextPanel(self._text, id="text_panel")
             with Vertical(id="candidate_container"):
                 yield Static("Candidate Terms", classes="section_title")
                 yield CandidateList(id="candidate_list")
@@ -136,28 +143,50 @@ class MainScreen(Screen):
             raise
 
     def _load_confirmed_terms(self) -> None:
-        """Load confirmed terms from database."""
-        # #region agent log
-        import json; log_data = {"sessionId":"debug-session","runId":"run1","hypothesisId":"C","location":"main_screen.py:138","message":"_load_confirmed_terms entry","data":{"project_id":str(self.project.id),"project_title":str(self.project.title)},"timestamp":int(__import__("time").time()*1000)}; open("/home/melihgurlek/Code/WeaveCodex/.cursor/debug.log","a").write(json.dumps(log_data)+"\n")
-        # #endregion
-        try:
-            terms = GlossaryTerm.select().where(
-                GlossaryTerm.project == self.project
-            )
-            # #region agent log
-            log_data = {"sessionId":"debug-session","runId":"run1","hypothesisId":"C","location":"main_screen.py:142","message":"_load_confirmed_terms query executed","data":{"term_count":str(len(list(terms)))},"timestamp":int(__import__("time").time()*1000)}; open("/home/melihgurlek/Code/WeaveCodex/.cursor/debug.log","a").write(json.dumps(log_data)+"\n")
-            # #endregion
-            self._confirmed_terms = {term.source_term for term in terms}
-            logger.debug("Loaded confirmed terms", count=len(self._confirmed_terms))
-            # #region agent log
-            log_data = {"sessionId":"debug-session","runId":"run1","hypothesisId":"C","location":"main_screen.py:145","message":"_load_confirmed_terms success","data":{"confirmed_count":str(len(self._confirmed_terms))},"timestamp":int(__import__("time").time()*1000)}; open("/home/melihgurlek/Code/WeaveCodex/.cursor/debug.log","a").write(json.dumps(log_data)+"\n")
-            # #endregion
-        except Exception as e:
-            # #region agent log
-            log_data = {"sessionId":"debug-session","runId":"run1","hypothesisId":"D","location":"main_screen.py:147","message":"_load_confirmed_terms error","data":{"error":str(e),"error_type":str(type(e).__name__)},"timestamp":int(__import__("time").time()*1000)}; open("/home/melihgurlek/Code/WeaveCodex/.cursor/debug.log","a").write(json.dumps(log_data)+"\n")
-            # #endregion
-            logger.exception("Error loading confirmed terms", error=str(e))
-            self._safe_update_status(f"Error loading terms: {e}")
+        """Load confirmed terms from database, using cache if available."""
+        def _fetch_confirmed_terms(project: Project | None) -> set[str]:
+            """Fetch confirmed terms from database."""
+            try:
+                terms = GlossaryTerm.select().where(
+                    GlossaryTerm.project == project
+                )
+                return {term.source_term for term in terms}
+            except Exception as e:
+                logger.exception("Error loading confirmed terms", error=str(e))
+                return set()
+        
+        self._confirmed_terms = self._cache.get_confirmed_terms(self.project, _fetch_confirmed_terms)
+        logger.debug("Loaded confirmed terms", count=len(self._confirmed_terms))
+
+    def _get_terms_with_translations(self, term_list: list[str]) -> set[str]:
+        """Get set of terms that already have translations in the database.
+        
+        Uses cache to avoid repeated database queries.
+        
+        Args:
+            term_list: List of source terms to check
+            
+        Returns:
+            Set of source terms that have translations
+        """
+        if not term_list:
+            return set()
+        
+        def _fetch_terms_with_translations(project: Project | None, terms: list[str]) -> set[str]:
+            """Fetch terms with translations from database."""
+            try:
+                existing_terms = GlossaryTerm.select(GlossaryTerm.source_term).where(
+                    GlossaryTerm.project == project,
+                    GlossaryTerm.source_term.in_(terms)
+                )
+                return {term.source_term for term in existing_terms}
+            except Exception as e:
+                logger.debug("Error checking existing translations", error=str(e))
+                return set()
+        
+        return self._cache.get_terms_with_translations(
+            self.project, term_list, _fetch_terms_with_translations
+        )
 
     def _update_highlights(self) -> None:
         """Update text highlights based on confirmed and candidate terms."""
@@ -194,8 +223,11 @@ class MainScreen(Screen):
             self._candidates = self._scout.process(self._text)
             self._candidate_terms = {c.term for c in self._candidates}
 
+            # Get terms that already have translations in the database
+            terms_with_translations = self._get_terms_with_translations([c.term for c in self._candidates])
+
             candidate_list = self.query_one("#candidate_list", CandidateList)
-            candidate_list.set_candidates(self._candidates)
+            candidate_list.set_candidates(self._candidates, terms_with_translations)
 
             self._update_highlights()
             self._safe_update_status(f"Found {len(self._candidates)} candidate terms")
@@ -207,10 +239,6 @@ class MainScreen(Screen):
     def action_translate(self) -> None:
         """Start translation process."""
         self._safe_update_status("Translation not yet implemented in TUI")
-
-    def _update_status(self, message: str) -> None:
-        """Update the status bar."""
-        self._safe_update_status(message)
 
     def _safe_update_status(self, message: str) -> None:
         """Update the status bar safely, handling cases where it may not be ready."""
@@ -230,29 +258,25 @@ class MainScreen(Screen):
     def on_candidate_list_ignored(self, message: CandidateList.Ignored) -> None:
         """Handle candidate ignore."""
         candidate = message.candidate
-        # Add to ignored terms in database
-        # #region agent log
-        import json; log_data = {"sessionId":"debug-session","runId":"run1","hypothesisId":"C","location":"main_screen.py:218","message":"on_candidate_list_ignored entry","data":{"term":str(candidate.term),"project_id":str(self.project.id)},"timestamp":int(__import__("time").time()*1000)}; open("/home/melihgurlek/Code/WeaveCodex/.cursor/debug.log","a").write(json.dumps(log_data)+"\n")
-        # #endregion
         try:
             from lexiconweaver.database.models import IgnoredTerm
 
             IgnoredTerm.get_or_create(
                 project=self.project, term=candidate.term
             )
-            # #region agent log
-            log_data = {"sessionId":"debug-session","runId":"run1","hypothesisId":"C","location":"main_screen.py:226","message":"on_candidate_list_ignored saved","data":{"term":str(candidate.term)},"timestamp":int(__import__("time").time()*1000)}; open("/home/melihgurlek/Code/WeaveCodex/.cursor/debug.log","a").write(json.dumps(log_data)+"\n")
-            # #endregion
+            self._cache.invalidate_ignored_terms(self.project)
+            
             # Remove from candidate list
             self._candidates = [c for c in self._candidates if c.term != candidate.term]
+            
+            # Get terms that still have translations (for green coloring)
+            terms_with_translations = self._get_terms_with_translations([c.term for c in self._candidates])
+            
             candidate_list = self.query_one("#candidate_list", CandidateList)
-            candidate_list.set_candidates(self._candidates)
+            candidate_list.set_candidates(self._candidates, terms_with_translations)
             self._safe_update_status(f"Ignored term: {candidate.term}")
             logger.debug("Term ignored", term=candidate.term)
         except Exception as e:
-            # #region agent log
-            log_data = {"sessionId":"debug-session","runId":"run1","hypothesisId":"D","location":"main_screen.py:235","message":"on_candidate_list_ignored error","data":{"term":str(candidate.term),"error":str(e),"error_type":str(type(e).__name__)},"timestamp":int(__import__("time").time()*1000)}; open("/home/melihgurlek/Code/WeaveCodex/.cursor/debug.log","a").write(json.dumps(log_data)+"\n")
-            # #endregion
             logger.exception("Error ignoring term", term=candidate.term, error=str(e))
             self._safe_update_status(f"Error ignoring term: {e}")
 
@@ -261,6 +285,51 @@ class MainScreen(Screen):
         candidate = message.candidate
         self._safe_update_status(f"Skipped: {candidate.term}")
         logger.debug("Term skipped", term=candidate.term)
+
+    def on_candidate_list_highlighted(self, message: CandidateList.Highlighted) -> None:
+        """Handle candidate click - navigate to term location in text."""
+        candidate = message.candidate
+        term = candidate.term
+        
+        # Find the first occurrence of the term in the text
+        # Try case-sensitive first, then case-insensitive
+        position = self._text.find(term)
+        if position == -1:
+            position = self._text.lower().find(term.lower())
+        
+        if position != -1:
+            try:
+                # Calculate which line the position is on (counting newlines)
+                lines_before = self._text[:position].count('\n')
+                line_number = lines_before + 1
+                
+                # Use call_after_refresh to ensure widgets are ready
+                def do_scroll():
+                    try:
+                        scroll_container = self.query_one("#text_scroll_container", ScrollableContainer)
+                        target_y = max(0, lines_before - 2)  # Show a few lines before target
+                        
+                        # Try different ways to scroll
+                        if hasattr(scroll_container, 'scroll_y'):
+                            scroll_container.scroll_y = target_y
+                        elif hasattr(scroll_container, 'scroll_to'):
+                            scroll_container.scroll_to(y=target_y, animate=False)
+                        elif hasattr(scroll_container, 'scroll_relative'):
+                            current = getattr(scroll_container, 'scroll_y', 0) or 0
+                            scroll_container.scroll_relative(y=target_y - current, animate=False)
+                        
+                        self._safe_update_status(f"Found {term} at line {line_number}")
+                    except Exception as e:
+                        self._safe_update_status(f"Scroll error: {str(e)[:40]}")
+                
+                self.call_after_refresh(do_scroll)
+                
+            except Exception as e:
+                logger.exception("Error scrolling to term", term=term, error=str(e))
+                self._safe_update_status(f"Error: {str(e)[:60]}")
+        else:
+            self._safe_update_status(f"Term '{term}' not found in text")
+            logger.debug("Term not found in text", term=term)
 
     def _show_term_modal(self, source_term: str) -> None:
         """Show the term editing modal."""
@@ -315,9 +384,18 @@ class MainScreen(Screen):
                 term.is_regex = message.is_regex
                 term.save()
             
+            self._cache.invalidate_glossary_terms(self.project)
+            
             self._confirmed_terms.add(message.source_term)
             self._candidate_terms.discard(message.source_term)
             self._update_highlights()
+            
+            # Refresh candidate list to show updated translation status (green color)
+            if self._candidates:
+                terms_with_translations = self._get_terms_with_translations([c.term for c in self._candidates])
+                candidate_list = self.query_one("#candidate_list", CandidateList)
+                candidate_list.set_candidates(self._candidates, terms_with_translations)
+            
             self._safe_update_status(f"Saved term: {message.source_term} -> {message.target_term}")
             logger.debug("Term saved", source=message.source_term, target=message.target_term, category=message.category)
         except Exception as e:

@@ -36,13 +36,7 @@ class DatabaseManager:
 
     def initialize(self, config: Config, db_path: Optional[Path] = None) -> None:
         """Initialize the database connection."""
-        # #region agent log
-        import json; log_data = {"sessionId":"debug-session","runId":"run1","hypothesisId":"B","location":"manager.py:37","message":"DatabaseManager.initialize entry","data":{"already_initialized":str(self._initialized),"db_path_param":str(db_path)},"timestamp":int(__import__("time").time()*1000)}; open("/home/melihgurlek/Code/WeaveCodex/.cursor/debug.log","a").write(json.dumps(log_data)+"\n")
-        # #endregion
         if self._initialized and self._db is not None:
-            # #region agent log
-            log_data = {"sessionId":"debug-session","runId":"run1","hypothesisId":"B","location":"manager.py:40","message":"DatabaseManager.initialize already initialized","data":{"db_path":str(self._db.database) if self._db else None},"timestamp":int(__import__("time").time()*1000)}; open("/home/melihgurlek/Code/WeaveCodex/.cursor/debug.log","a").write(json.dumps(log_data)+"\n")
-            # #endregion
             return
 
         self._config = config
@@ -50,9 +44,6 @@ class DatabaseManager:
         if db_path is None:
             db_path = config.get_database_path()
 
-        # #region agent log
-        log_data = {"sessionId":"debug-session","runId":"run1","hypothesisId":"A","location":"manager.py:47","message":"DatabaseManager.initialize resolved path","data":{"final_db_path":str(db_path),"exists":str(db_path.exists()),"is_absolute":str(db_path.is_absolute())},"timestamp":int(__import__("time").time()*1000)}; open("/home/melihgurlek/Code/WeaveCodex/.cursor/debug.log","a").write(json.dumps(log_data)+"\n")
-        # #endregion
         try:
             # Ensure parent directory exists
             db_path.parent.mkdir(parents=True, exist_ok=True)
@@ -78,14 +69,8 @@ class DatabaseManager:
             create_tables()
 
             self._initialized = True
-            # #region agent log
-            log_data = {"sessionId":"debug-session","runId":"run1","hypothesisId":"B","location":"manager.py:73","message":"DatabaseManager.initialize success","data":{"db_path":str(db_path)},"timestamp":int(__import__("time").time()*1000)}; open("/home/melihgurlek/Code/WeaveCodex/.cursor/debug.log","a").write(json.dumps(log_data)+"\n")
-            # #endregion
 
         except Exception as e:
-            # #region agent log
-            log_data = {"sessionId":"debug-session","runId":"run1","hypothesisId":"D","location":"manager.py:75","message":"DatabaseManager.initialize error","data":{"db_path":str(db_path),"error":str(e)},"timestamp":int(__import__("time").time()*1000)}; open("/home/melihgurlek/Code/WeaveCodex/.cursor/debug.log","a").write(json.dumps(log_data)+"\n")
-            # #endregion
             raise DatabaseError(f"Failed to initialize database at {db_path}: {e}") from e
 
     def get_connection(self) -> SqliteDatabase:

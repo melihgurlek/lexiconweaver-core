@@ -8,6 +8,7 @@ TERM_CATEGORIES = [
     ("Person", "Person"),
     ("Location", "Location"),
     ("Skill", "Skill"),
+    ("Clan", "Clan"),
     ("Item", "Item"),
     ("Other", "Other"),
 ]

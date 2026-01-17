@@ -9,6 +9,7 @@ from lexiconweaver.database.models import IgnoredTerm, Project
 from lexiconweaver.engines.base import BaseEngine
 from lexiconweaver.exceptions import ScoutError
 from lexiconweaver.logging_config import get_logger
+from lexiconweaver.utils.cache import get_cache
 from lexiconweaver.utils.text_processor import extract_ngrams
 
 logger = get_logger(__name__)
@@ -26,18 +27,8 @@ class CandidateTerm(NamedTuple):
 class Scout(BaseEngine):
     """Discovery engine that identifies potential terms using heuristics."""
 
-    # Common English stopwords (subset, expandable)
-    STOPWORDS = {
-        "the", "a", "an", "and", "or", "but", "in", "on", "at", "to", "for",
-        "of", "with", "by", "from", "as", "is", "was", "are", "were", "been",
-        "be", "have", "has", "had", "do", "does", "did", "will", "would",
-        "should", "could", "may", "might", "must", "can", "this", "that",
-        "these", "those", "i", "you", "he", "she", "it", "we", "they", "what",
-        "which", "who", "whom", "where", "when", "why", "how", "all", "each",
-        "every", "both", "few", "more", "most", "other", "some", "such", "no",
-        "nor", "not", "only", "own", "same", "so", "than", "too", "very",
-        "just", "now", "then", "here", "there", "when", "where", "why", "how",
-    }
+    # Cache for spaCy stopwords (loaded lazily)
+    _spacy_stopwords: set[str] | None = None
 
     # Definition patterns that indicate a term
     DEFINITION_PATTERNS = [
@@ -54,6 +45,7 @@ class Scout(BaseEngine):
         self.project = project
         self.min_confidence = config.scout.min_confidence
         self.max_ngram_size = config.scout.max_ngram_size
+        self._cache = get_cache()
 
     def process(self, text: str) -> list[CandidateTerm]:
         """Process text and return candidate terms with confidence scores."""
@@ -125,6 +117,7 @@ class Scout(BaseEngine):
     ) -> list[str]:
         """Filter out stopwords and ignored terms."""
         filtered = []
+        stopwords = self._get_stopwords()
 
         for candidate in candidates:
             candidate_lower = candidate.lower()
@@ -135,7 +128,7 @@ class Scout(BaseEngine):
 
             # Skip if all words are stopwords
             words = candidate_lower.split()
-            if all(word in self.STOPWORDS for word in words):
+            if all(word in stopwords for word in words):
                 continue
 
             # Skip single-letter or very short terms
@@ -209,29 +202,44 @@ class Scout(BaseEngine):
 
         return scored
 
+    @classmethod
+    def _get_stopwords(cls) -> set[str]:
+        """Get spaCy stopwords, loading them lazily if needed.
+        
+        Returns:
+            Set of stopwords (lowercased)
+        """
+        if cls._spacy_stopwords is None:
+            try:
+                from spacy.lang.en.stop_words import STOP_WORDS
+                cls._spacy_stopwords = set(STOP_WORDS)
+                logger.debug("Loaded spaCy stopwords", count=len(cls._spacy_stopwords))
+            except ImportError:
+                logger.warning("spaCy not available, using minimal stopword set")
+                # Fallback to minimal set if spaCy is not installed
+                cls._spacy_stopwords = {
+                    "the", "a", "an", "and", "or", "but", "in", "on", "at", "to", "for",
+                    "of", "with", "by", "from", "as", "is", "was", "are", "were", "been",
+                    "be", "have", "has", "had", "do", "does", "did", "will", "would",
+                    "should", "could", "may", "might", "must", "can", "this", "that",
+                    "these", "those", "i", "you", "he", "she", "it", "we", "they",
+                }
+        
+        return cls._spacy_stopwords
+    
     def _get_ignored_terms(self) -> set[str]:
-        """Get ignored terms for the current project."""
-        # #region agent log
-        import json; log_data = {"sessionId":"debug-session","runId":"run1","hypothesisId":"C","location":"scout.py:212","message":"_get_ignored_terms entry","data":{"project_id":str(self.project.id) if self.project else None},"timestamp":int(__import__("time").time()*1000)}; open("/home/melihgurlek/Code/WeaveCodex/.cursor/debug.log","a").write(json.dumps(log_data)+"\n")
-        # #endregion
-        if self.project is None:
-            # #region agent log
-            log_data = {"sessionId":"debug-session","runId":"run1","hypothesisId":"C","location":"scout.py:215","message":"_get_ignored_terms no project","data":{},"timestamp":int(__import__("time").time()*1000)}; open("/home/melihgurlek/Code/WeaveCodex/.cursor/debug.log","a").write(json.dumps(log_data)+"\n")
-            # #endregion
-            return set()
-
-        try:
-            ignored = IgnoredTerm.select().where(
-                IgnoredTerm.project == self.project
-            )
-            result = {term.term.lower() for term in ignored}
-            # #region agent log
-            log_data = {"sessionId":"debug-session","runId":"run1","hypothesisId":"C","location":"scout.py:221","message":"_get_ignored_terms success","data":{"count":str(len(result))},"timestamp":int(__import__("time").time()*1000)}; open("/home/melihgurlek/Code/WeaveCodex/.cursor/debug.log","a").write(json.dumps(log_data)+"\n")
-            # #endregion
-            return result
-        except Exception as e:
-            # #region agent log
-            log_data = {"sessionId":"debug-session","runId":"run1","hypothesisId":"D","location":"scout.py:223","message":"_get_ignored_terms error","data":{"error":str(e),"error_type":str(type(e).__name__)},"timestamp":int(__import__("time").time()*1000)}; open("/home/melihgurlek/Code/WeaveCodex/.cursor/debug.log","a").write(json.dumps(log_data)+"\n")
-            # #endregion
-            logger.warning("Failed to load ignored terms", error=str(e))
-            return set()
+        """Get ignored terms for the current project, using cache if available."""
+        def _fetch_ignored_terms(project: Project | None) -> set[str]:
+            """Fetch ignored terms from database."""
+            if project is None:
+                return set()
+            try:
+                ignored = IgnoredTerm.select().where(
+                    IgnoredTerm.project == project
+                )
+                return {term.term.lower() for term in ignored}
+            except Exception as e:
+                logger.warning("Failed to load ignored terms", error=str(e))
+                return set()
+        
+        return self._cache.get_ignored_terms(self.project, _fetch_ignored_terms)

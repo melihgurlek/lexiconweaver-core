@@ -1,5 +1,6 @@
 """Text panel widget for displaying chapter text with highlighting."""
 
+from textual.containers import ScrollableContainer
 from textual.widgets import Static
 
 from lexiconweaver.utils.highlighting import HighlightSpan
@@ -43,6 +44,56 @@ class TextPanel(Static):
         """Set the highlight spans."""
         self._highlights = highlights
         self._update_display()
+
+    def scroll_to_position(self, position: int) -> None:
+        """Scroll to a specific position in the text.
+        
+        Args:
+            position: Character position in the text to scroll to
+        """
+        if not self._text or position < 0 or position >= len(self._text):
+            return
+        
+        try:
+            # Try to find the ScrollableContainer by walking up the parent chain
+            parent = self.parent
+            scroll_container = None
+            while parent is not None:
+                if isinstance(parent, ScrollableContainer):
+                    scroll_container = parent
+                    break
+                parent = parent.parent
+            
+            if not scroll_container:
+                # Fallback: try to query by ID from the screen
+                screen = self.screen
+                if screen:
+                    try:
+                        scroll_container = screen.query_one("#text_scroll_container", ScrollableContainer)
+                    except Exception:
+                        pass
+            
+            if scroll_container:
+                # Calculate which line the position is on
+                lines_before = self._text[:position].count('\n')
+                
+                # Get the visible height in lines
+                visible_height = scroll_container.size.height if scroll_container.size.height > 0 else 10
+                if visible_height <= 0:
+                    visible_height = 10
+                
+                # Calculate target scroll position (center the target line if possible)
+                # ScrollableContainer scrolls by pixel/line offset
+                target_scroll = max(0, lines_before - visible_height // 2)
+                
+                # Scroll the container - use call_after_refresh to ensure widget is ready
+                self.call_after_refresh(
+                    lambda: scroll_container.scroll_to(y=target_scroll, animate=True)
+                )
+        except Exception as e:
+            # If scrolling fails, log but don't crash
+            import logging
+            logging.debug(f"Error scrolling to position {position}: {e}")
 
     def _update_display(self) -> None:
         """Update the displayed text with highlights."""

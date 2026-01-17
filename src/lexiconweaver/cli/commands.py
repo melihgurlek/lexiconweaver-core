@@ -257,9 +257,6 @@ def tui(
     project_name: Optional[str] = typer.Option(None, "--project", "-p", help="Project name"),
 ):
     """Launch the Textual TUI interface."""
-    # #region agent log
-    import json, os; log_data = {"sessionId":"debug-session","runId":"run1","hypothesisId":"C","location":"commands.py:254","message":"tui command entry","data":{"cwd":str(os.getcwd()),"file":str(file) if file else None},"timestamp":int(__import__("time").time()*1000)}; open("/home/melihgurlek/Code/WeaveCodex/.cursor/debug.log","a").write(json.dumps(log_data)+"\n")
-    # #endregion
     try:
         config = get_config()
         configure_logging(config, quiet=True)  # Suppress console output in TUI mode
