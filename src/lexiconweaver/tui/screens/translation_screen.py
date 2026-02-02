@@ -1,5 +1,6 @@
 """Translation screen for side-by-side translation view."""
 
+import asyncio
 from pathlib import Path
 
 from textual.containers import Horizontal, ScrollableContainer, Vertical
@@ -10,6 +11,7 @@ from lexiconweaver.config import Config
 from lexiconweaver.database.models import GlossaryTerm, Project
 from lexiconweaver.engines.weaver import Weaver
 from lexiconweaver.logging_config import get_logger
+from lexiconweaver.providers import LLMProviderManager
 from lexiconweaver.tui.widgets.text_panel import TextPanel
 from lexiconweaver.tui.widgets.translation_panel import TranslationPanel
 from lexiconweaver.utils.highlighting import HighlightSpan, highlight_terms
@@ -99,7 +101,7 @@ class TranslationScreen(Screen):
                 with ScrollableContainer(id="source_scroll_container"):
                     yield TextPanel(self._text, id="source_panel")
             with Vertical(id="translation_container"):
-                yield Static("Translation", classes="section_title")
+                yield Static("Translation", classes="section_title", id="translation_title")
                 with ScrollableContainer(id="translation_scroll_container"):
                     yield TranslationPanel(id="translation_panel")
         yield Static("Ready", id="status_bar")
@@ -171,37 +173,25 @@ class TranslationScreen(Screen):
             logger.exception("Error loading target terms", error=str(e))
             self._target_terms = set()
 
-    async def _test_ollama_connection(self) -> None:
-        """Test Ollama connection and model availability."""
-        import httpx
-        
+    def _set_translation_title(self, title: str) -> None:
+        """Update the translation panel section title."""
         try:
-            self._safe_update_status("Testing Ollama connection...")
-            url = f"{self.config.ollama.url}/api/tags"
-            
-            async with httpx.AsyncClient(timeout=5.0) as client:
-                response = await client.get(url)
-                if response.status_code != 200:
-                    raise Exception(f"Ollama API returned status {response.status_code}")
-                
-                models_data = response.json()
-                available_models = [model.get("name", "") for model in models_data.get("models", [])]
-                
-                # Check if configured model is available
-                configured_model = self.config.ollama.model
-                if configured_model not in available_models:
-                    model_list = ", ".join(available_models) if available_models else "none"
-                    raise Exception(
-                        f"Model '{configured_model}' not found. Available models: {model_list}. "
-                        f"Install with: ollama pull {configured_model}"
-                    )
-                
-                logger.info("Ollama connection test passed", model=configured_model)
-                self._safe_update_status(f"Connected to Ollama (model: {configured_model})")
-        except httpx.RequestError as e:
-            raise Exception(f"Cannot connect to Ollama at {self.config.ollama.url}. Is Ollama running?") from e
+            title_widget = self.query_one("#translation_title", Static)
+            title_widget.update(title)
+        except Exception:
+            pass
+
+    async def _test_provider_connection(self) -> None:
+        """Test LLM provider connection (Ollama or DeepSeek)."""
+        try:
+            self._safe_update_status("Testing connection...")
+            await asyncio.sleep(0)
+            manager = LLMProviderManager(self.config)
+            provider = await manager.get_available_provider()
+            self._safe_update_status(f"Connected ({provider.name}). Starting translation...")
+            await asyncio.sleep(0)
         except Exception as e:
-            logger.exception("Ollama connection test failed", error=str(e))
+            logger.exception("Provider connection test failed", error=str(e))
             raise
 
     def _update_translation_highlights(self) -> None:
@@ -227,15 +217,16 @@ class TranslationScreen(Screen):
         self._is_translating = True
         self._safe_update_status("Starting translation...")
         
+        self._set_translation_title("Translation (in progress…)")
         # Use run_worker to run async translation in background
-        # Also run connection test in the same worker
         async def test_and_translate():
             try:
-                await self._test_ollama_connection()
+                await self._test_provider_connection()
                 await self._translate_text()
             except Exception as e:
                 logger.exception("Translation worker error", error=str(e))
                 self._safe_update_status(f"Error: {e}")
+                self._set_translation_title("Translation")
                 self._is_translating = False
         
         self.run_worker(
@@ -249,101 +240,125 @@ class TranslationScreen(Screen):
         try:
             if not self._text or not self._text.strip():
                 self._safe_update_status("No text to translate")
+                self._set_translation_title("Translation")
                 logger.warning("Attempted to translate empty text")
                 return
-            
+
             max_chars = self.config.weaver.translation_batch_max_chars
             context_sentences = self.config.weaver.translation_context_sentences
-            
-            # Batch paragraphs
+
             batches = batch_paragraphs_smart(self._text, max_chars, context_sentences)
             total_batches = len(batches)
-            
+
             if total_batches == 0:
                 self._safe_update_status("No batches to translate")
+                self._set_translation_title("Translation")
                 logger.warning("No batches created from text")
                 return
-            
-            self._safe_update_status(f"Translating batch 1/{total_batches}...")
+
+            self._safe_update_status(f"Translating batch 1/{total_batches}…")
+            await asyncio.sleep(0)
             logger.info("Starting translation", total_batches=total_batches, text_length=len(self._text))
-            
+
             translation_panel = self.query_one("#translation_panel", TranslationPanel)
             previous_context = ""
-            
+
             for batch_idx, batch in enumerate(batches, 1):
                 if not batch or not batch.strip():
                     logger.warning(f"Skipping empty batch {batch_idx}")
                     continue
-                    
-                self._safe_update_status(f"Translating batch {batch_idx}/{total_batches}...")
+
+                self._safe_update_status(
+                    f"Translating batch {batch_idx}/{total_batches}… (streaming)"
+                )
+                await asyncio.sleep(0)
                 logger.debug(f"Translating batch {batch_idx}", batch_length=len(batch))
-                
-                # Translate batch with context
-                # Note: context is included in prompt for coherence, but we'll accept
-                # that some repetition may occur in the output
+
                 batch_translation = ""
                 chunk_count = 0
                 try:
-                    async for chunk in self._weaver.translate_batch_streaming(batch, previous_context):
+                    async for chunk in self._weaver.translate_batch_streaming(
+                        batch, previous_context
+                    ):
                         if chunk:
                             batch_translation += chunk
                             chunk_count += 1
-                            # Append to panel for streaming display
                             translation_panel.append_text(chunk)
-                            # Update highlights periodically (every 200 chars to avoid performance issues)
                             if len(batch_translation) % 200 == 0:
                                 self._translated_text = translation_panel.get_text()
                                 self._update_translation_highlights()
+                                await asyncio.sleep(0)
                 except Exception as batch_error:
                     error_msg = str(batch_error)
-                    logger.exception(f"Error translating batch {batch_idx}", error=error_msg)
-                    self._safe_update_status(f"Batch {batch_idx} error: {error_msg[:60]}")
-                    # Add error marker to translation
-                    batch_translation = f"\n[ERROR in batch {batch_idx}: {error_msg[:50]}...]\n"
+                    logger.exception(
+                        f"Error translating batch {batch_idx}", error=error_msg
+                    )
+                    self._safe_update_status(
+                        f"Batch {batch_idx} error: {error_msg[:60]}"
+                    )
+                    batch_translation = (
+                        f"\n[ERROR in batch {batch_idx}: {error_msg[:50]}...]\n"
+                    )
                     translation_panel.append_text(batch_translation)
-                    # Continue with next batch
                     continue
-                
-                logger.debug(f"Batch {batch_idx} completed", chunks=chunk_count, translation_length=len(batch_translation))
-                
+
+                logger.debug(
+                    f"Batch {batch_idx} completed",
+                    chunks=chunk_count,
+                    translation_length=len(batch_translation),
+                )
+
                 if not batch_translation:
                     logger.warning(f"Batch {batch_idx} produced no translation")
                     batch_translation = f"[Translation failed for batch {batch_idx}]"
                     translation_panel.append_text(batch_translation)
-                
-                # Update translated text from panel (single source of truth)
+
                 self._translated_text = translation_panel.get_text()
-                
-                # Update highlights after each batch
                 self._update_translation_highlights()
-                
-                # Extract context for next batch from the translated batch
-                # Use the last N sentences from the current batch translation
+
+                if batch_idx < total_batches:
+                    self._safe_update_status(
+                        f"Batch {batch_idx}/{total_batches} done. Next…"
+                    )
+                    await asyncio.sleep(0)
+
                 if batch_translation:
                     context_sentences_list = split_into_sentences(batch_translation)
-                    if context_sentences_list and len(context_sentences_list) >= context_sentences:
-                        previous_context = "\n\n".join(context_sentences_list[-context_sentences:])
+                    if (
+                        context_sentences_list
+                        and len(context_sentences_list) >= context_sentences
+                    ):
+                        previous_context = "\n\n".join(
+                            context_sentences_list[-context_sentences:]
+                        )
                     else:
-                        # Fallback: use last portion of batch_translation
-                        # Take last ~200 chars or entire batch if shorter
                         context_length = min(200, len(batch_translation))
-                        previous_context = batch_translation[-context_length:] if batch_translation else ""
-            
-            # Final highlight update
+                        previous_context = (
+                            batch_translation[-context_length:]
+                            if batch_translation
+                            else ""
+                        )
+
             self._translated_text = translation_panel.get_text()
             self._update_translation_highlights()
-            
-            # Auto-export if enabled
+
+            self._set_translation_title("Translation (complete)")
             if self.config.weaver.translation_auto_export:
                 self._export_translation(auto=True)
+                self._safe_update_status(
+                    "Translation complete. Exported. Press 'e' to export again."
+                )
             else:
-                self._safe_update_status("Translation complete! Press 'e' to export.")
-            
+                self._safe_update_status(
+                    "Translation complete. Press 'e' to export."
+                )
+
             logger.debug("Translation completed", length=len(self._translated_text))
-            
+
         except Exception as e:
             logger.exception("Error during translation", error=str(e))
             self._safe_update_status(f"Translation error: {e}")
+            self._set_translation_title("Translation")
         finally:
             self._is_translating = False
 

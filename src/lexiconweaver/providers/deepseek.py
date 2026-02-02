@@ -36,18 +36,36 @@ class DeepSeekProvider(BaseLLMProvider):
 
     async def is_available(self) -> bool:
         """Check if DeepSeek API is available and configured."""
-        if not self.api_key:
+        if not self.api_key or not self.api_key.strip():
             logger.debug("DeepSeek API key not configured")
             return False
 
         try:
-            # Make a lightweight request to verify API key
-            async with httpx.AsyncClient(timeout=10) as client:
-                response = await client.get(
-                    f"{self.base_url}/models",
-                    headers={"Authorization": f"Bearer {self.api_key}"},
+            # Use a minimal chat completion to verify API key and endpoint (most reliable)
+            url = f"{self.base_url}/chat/completions"
+            headers = {
+                "Authorization": f"Bearer {self.api_key.strip()}",
+                "Content-Type": "application/json",
+            }
+            payload = {
+                "model": self.model,
+                "messages": [{"role": "user", "content": "Say OK"}],
+                "stream": False,
+                "max_tokens": 5,
+            }
+            async with httpx.AsyncClient(timeout=15) as client:
+                response = await client.post(url, json=payload, headers=headers)
+                if response.status_code == 200:
+                    return True
+                if response.status_code == 401:
+                    logger.debug("DeepSeek API key invalid or expired")
+                    return False
+                logger.debug(
+                    "DeepSeek availability check failed",
+                    status=response.status_code,
+                    body=response.text[:200],
                 )
-                return response.status_code == 200
+                return False
         except Exception as e:
             logger.debug("DeepSeek availability check failed", error=str(e))
             return False
@@ -64,7 +82,8 @@ class DeepSeekProvider(BaseLLMProvider):
         Raises:
             ProviderError: If the API call fails after retries.
         """
-        if not self.api_key:
+        api_key = (self.api_key or "").strip()
+        if not api_key:
             raise ProviderError(
                 "DeepSeek API key not configured. Set LEXICONWEAVER_DEEPSEEK__API_KEY environment variable.",
                 provider="deepseek",
@@ -80,7 +99,7 @@ class DeepSeekProvider(BaseLLMProvider):
         }
 
         headers = {
-            "Authorization": f"Bearer {self.api_key}",
+            "Authorization": f"Bearer {api_key}",
             "Content-Type": "application/json",
         }
 
@@ -177,7 +196,8 @@ class DeepSeekProvider(BaseLLMProvider):
         Raises:
             ProviderError: If the API call fails.
         """
-        if not self.api_key:
+        api_key = (self.api_key or "").strip()
+        if not api_key:
             raise ProviderError(
                 "DeepSeek API key not configured. Set LEXICONWEAVER_DEEPSEEK__API_KEY environment variable.",
                 provider="deepseek",
@@ -193,7 +213,7 @@ class DeepSeekProvider(BaseLLMProvider):
         }
 
         headers = {
-            "Authorization": f"Bearer {self.api_key}",
+            "Authorization": f"Bearer {api_key}",
             "Content-Type": "application/json",
         }
 

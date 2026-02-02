@@ -4,7 +4,7 @@ import asyncio
 import json
 import re
 from dataclasses import dataclass
-from typing import AsyncIterator
+from typing import AsyncIterator, Callable
 
 from lexiconweaver.config import Config
 from lexiconweaver.database.models import GlossaryTerm, ProposedTerm, Project
@@ -61,19 +61,25 @@ class ScoutRefiner(BaseEngine):
         return asyncio.run(self.refine_text(text))
 
     async def refine_text(
-        self, text: str, progress_callback: AsyncIterator[str] | None = None
+        self, text: str, progress_callback: Callable[[str], None] | None = None
     ) -> list[RefinedTerm]:
         """Run the full two-pass refinement on text.
         
         Args:
             text: The source text to analyze.
-            progress_callback: Optional callback for progress updates.
+            progress_callback: Optional callback for progress updates (message string).
         
         Returns:
             List of refined terms with proposed translations.
         """
+        def _progress(msg: str) -> None:
+            if progress_callback:
+                progress_callback(msg)
+
         existing_terms = self._get_existing_terms()
 
+        _progress("Smart Scout: Pass 1 — heuristic scout...")
+        await asyncio.sleep(0)
         logger.info("Running heuristic scout (Pass 1)")
         candidates = self.scout.process(text)
         logger.info("Scout found candidates", count=len(candidates))
@@ -92,10 +98,14 @@ class ScoutRefiner(BaseEngine):
             logger.info("No new candidates to refine")
             return []
 
+        _progress("Smart Scout: Pass 2a — cleaning candidates with LLM...")
+        await asyncio.sleep(0)
         logger.info("Cleaning candidates with LLM (Pass 2a)")
         cleaned = await self._clean_candidates(new_candidates, text)
         logger.info("LLM validated candidates", count=len(cleaned))
 
+        _progress("Smart Scout: Pass 2b — finding missed terms...")
+        await asyncio.sleep(0)
         logger.info("Finding missed terms with LLM (Pass 2b)")
         missed = await self._find_missed_terms(text, cleaned)
         logger.info("LLM found missed terms", count=len(missed))
@@ -106,6 +116,8 @@ class ScoutRefiner(BaseEngine):
             logger.info("No valid terms found after LLM refinement")
             return []
 
+        _progress("Smart Scout: Pass 2c — proposing translations...")
+        await asyncio.sleep(0)
         logger.info("Proposing translations with LLM (Pass 2c)")
         refined = await self._propose_translations(all_terms, text)
         logger.info("Generated proposals", count=len(refined))

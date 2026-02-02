@@ -25,6 +25,7 @@ from lexiconweaver.engines.scout_refiner import ScoutRefiner
 from lexiconweaver.engines.weaver import Weaver
 from lexiconweaver.exceptions import LexiconWeaverError
 from lexiconweaver.logging_config import configure_logging, get_logger
+from lexiconweaver.providers import LLMProviderManager
 from lexiconweaver.tui.app import LexiconWeaverApp
 from lexiconweaver.utils.validators import validate_text_file
 
@@ -51,6 +52,74 @@ def get_project(project_name: Optional[str] = None) -> Project:
             project = Project.create(title="default")
             console.print(f"[yellow]Created default project[/yellow]")
         return project
+
+
+@app.command("test-connection")
+def test_connection(
+    verbose: bool = typer.Option(False, "--verbose", "-v", help="Run a minimal generate test"),
+):
+    """Test LLM provider connection (Ollama and/or DeepSeek)."""
+    try:
+        config = get_config()
+        configure_logging(config)
+        # Don't initialize database for connection test
+
+        console.print("[bold]LexiconWeaver Connection Test[/bold]\n")
+
+        # Show config (without exposing API key)
+        console.print("[cyan]Provider config:[/cyan]")
+        console.print(f"  Primary: [bold]{config.provider.primary}[/bold]")
+        console.print(f"  Fallback: {config.provider.fallback}")
+        console.print(f"  Fallback on error: {config.provider.fallback_on_error}")
+        console.print()
+
+        if config.provider.primary == "ollama":
+            console.print(f"  Ollama URL: {config.ollama.url}")
+            console.print(f"  Ollama model: {config.ollama.model}")
+        else:
+            console.print(f"  DeepSeek base URL: {config.deepseek.base_url}")
+            console.print(f"  DeepSeek model: {config.deepseek.model}")
+            key_set = bool((config.deepseek.api_key or "").strip())
+            console.print(f"  DeepSeek API key: {'[green]set[/green]' if key_set else '[red]not set[/red]'}")
+        console.print()
+
+        # Test availability
+        async def _run_test():
+            manager = LLMProviderManager(config)
+            console.print("[cyan]Checking provider availability...[/cyan]")
+            status = await manager.check_availability()
+            for provider_name, available in status.items():
+                if available:
+                    console.print(f"  [green]✓[/green] {provider_name}: [green]available[/green]")
+                else:
+                    console.print(f"  [red]✗[/red] {provider_name}: [red]not available[/red]")
+            console.print()
+
+            # Optionally run a minimal generate
+            if verbose:
+                console.print("[cyan]Running minimal generate test...[/cyan]")
+                try:
+                    provider = await manager.get_available_provider()
+                    console.print(f"  Using provider: [bold]{provider.name}[/bold]")
+                    messages = [
+                        {"role": "user", "content": "Reply with exactly: OK"},
+                    ]
+                    response = await manager.generate(messages)
+                    response_preview = (response or "").strip()[:80]
+                    console.print(f"  [green]✓[/green] Response: {response_preview!r}")
+                except Exception as e:
+                    console.print(f"  [red]✗[/red] Generate failed: {e}")
+
+        asyncio.run(_run_test())
+        console.print("\n[bold green]Done.[/bold green]")
+
+    except LexiconWeaverError as e:
+        console.print(f"[red]Error: {e.message}[/red]")
+        raise typer.Exit(1)
+    except Exception as e:
+        console.print(f"[red]Unexpected error: {e}[/red]")
+        logger.exception("Test connection failed")
+        raise typer.Exit(1)
 
 
 @app.command()

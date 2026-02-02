@@ -260,15 +260,18 @@ class MainScreen(Screen):
         """Run the Smart Scout asynchronously."""
         try:
             self._scout_refiner = ScoutRefiner(self.config, self.project)
-            
-            self._safe_update_status("Smart Scout: Running heuristic pass...")
-            
-            self._refined_terms = await self._scout_refiner.refine_text(self._text)
-            
-            self._safe_update_status(f"Smart Scout: Saving {len(self._refined_terms)} proposals...")
-            
+
+            def on_progress(msg: str) -> None:
+                self._safe_update_status(msg)
+
+            self._refined_terms = await self._scout_refiner.refine_text(
+                self._text, progress_callback=on_progress
+            )
+
+            self._safe_update_status("Smart Scout: Saving proposals...")
+            await asyncio.sleep(0)  # Let UI update
             saved_count = await self._scout_refiner.save_proposals(self._refined_terms)
-            
+
             self._candidates = [
                 CandidateTerm(
                     term=rt.source_term,
@@ -281,15 +284,21 @@ class MainScreen(Screen):
                 if rt.is_valid
             ]
             self._candidate_terms = {c.term for c in self._candidates}
-            
-            terms_with_translations = self._get_terms_with_translations([c.term for c in self._candidates])
-            
+
+            terms_with_translations = self._get_terms_with_translations(
+                [c.term for c in self._candidates]
+            )
+
             candidate_list = self.query_one("#candidate_list", CandidateList)
-            candidate_list.set_candidates(self._candidates, terms_with_translations, has_proposals=True)
-            
+            candidate_list.set_candidates(
+                self._candidates, terms_with_translations, has_proposals=True
+            )
+
             self._update_highlights()
-            self._safe_update_status(f"Smart Scout: Found {len(self._candidates)} terms, saved {saved_count} proposals")
-            
+            self._safe_update_status(
+                f"Smart Scout complete — {len(self._candidates)} terms, {saved_count} proposals saved."
+            )
+
         except Exception as e:
             logger.exception("Smart Scout error", error=str(e))
             self._safe_update_status(f"Smart Scout error: {str(e)[:60]}")
