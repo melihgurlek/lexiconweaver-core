@@ -12,8 +12,10 @@ from lexiconweaver.database.models import GlossaryTerm, Project
 from lexiconweaver.engines.weaver import Weaver
 from lexiconweaver.logging_config import get_logger
 from lexiconweaver.providers import LLMProviderManager
+from lexiconweaver.tui.widgets.export_modal import ExportModal
 from lexiconweaver.tui.widgets.text_panel import TextPanel
 from lexiconweaver.tui.widgets.translation_panel import TranslationPanel
+from lexiconweaver.utils.document_writer import write_document
 from lexiconweaver.utils.highlighting import HighlightSpan, highlight_terms
 from lexiconweaver.utils.text_processor import batch_paragraphs_smart, split_into_sentences
 
@@ -380,38 +382,59 @@ class TranslationScreen(Screen):
         self.dismiss()
 
     def action_export(self) -> None:
-        """Handle export action."""
-        self._export_translation(auto=False)
-
-    def _export_translation(self, auto: bool = False) -> None:
-        """Export translation to file."""
+        """Handle export action: show format/path modal or export to default."""
         if not self._translated_text:
             self._safe_update_status("No translation to export")
             return
-        
+        default_path = (
+            self._text_file.parent / f"{self._text_file.stem}_translated.txt"
+            if self._text_file
+            else Path.cwd() / "translation.txt"
+        )
+        existing = self.query(ExportModal)
+        if not existing:
+            self.mount(
+                ExportModal(default_path=default_path, default_format="txt")
+            )
+
+    def _export_translation(self, auto: bool = False) -> None:
+        """Export translation to default .txt file (used for auto-export)."""
+        if not self._translated_text:
+            return
+        default_path = (
+            self._text_file.parent / f"{self._text_file.stem}_translated.txt"
+            if self._text_file
+            else Path.cwd() / "translation.txt"
+        )
         try:
-            # Determine output filename
-            if self._text_file:
-                output_file = self._text_file.parent / f"{self._text_file.stem}_translated{self._text_file.suffix}"
-            else:
-                output_file = Path.cwd() / "translation.txt"
-            
-            # If not auto-export, we could show a modal for filename input
-            # For now, just use the default
-            if not auto:
-                # In a future enhancement, we could add a filename input modal
-                pass
-            
-            # Write translation to file
-            with open(output_file, "w", encoding="utf-8") as f:
-                f.write(self._translated_text)
-            
-            self._safe_update_status(f"Translation exported to {output_file}")
-            logger.info("Translation exported", file=str(output_file))
-            
+            write_document(
+                default_path,
+                self._translated_text,
+                title=self._text_file.stem if self._text_file else "Translation",
+            )
+            self._safe_update_status(f"Translation exported to {default_path}")
+            logger.info("Translation exported", file=str(default_path))
         except Exception as e:
             logger.exception("Error exporting translation", error=str(e))
             self._safe_update_status(f"Export error: {e}")
+
+    def on_export_modal_export_requested(
+        self, event: ExportModal.ExportRequested
+    ) -> None:
+        """Handle export from modal: write to chosen path and update status."""
+        path = event.path
+        try:
+            title = self._text_file.stem if self._text_file else "Translation"
+            write_document(path, self._translated_text, title=title)
+            self._safe_update_status(f"Translation exported to {path}")
+            logger.info("Translation exported", file=str(path))
+        except Exception as e:
+            logger.exception("Error exporting translation", error=str(e))
+            self._safe_update_status(f"Export error: {e}")
+
+    def on_export_modal_cancelled(self, _event: ExportModal.Cancelled) -> None:
+        """Handle export modal cancelled."""
+        self._safe_update_status("Export cancelled")
 
     def action_sync_scroll(self) -> None:
         """Synchronize scroll positions between panels."""

@@ -22,8 +22,8 @@ def test_scout_extract_candidates(config: Config, initialized_db: Project, sampl
     candidates = scout._extract_candidates(sample_text)
 
     assert len(candidates) > 0
-    assert "Golden Core" in candidates or "golden core" in candidates.lower()
-    assert "Void Step" in candidates or "void step" in candidates.lower()
+    assert any("golden core" in c.lower() for c in candidates)
+    assert any("void step" in c.lower() for c in candidates)
 
 
 def test_scout_filter_candidates(config: Config, initialized_db: Project) -> None:

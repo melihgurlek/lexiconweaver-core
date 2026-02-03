@@ -27,7 +27,8 @@ from lexiconweaver.exceptions import LexiconWeaverError
 from lexiconweaver.logging_config import configure_logging, get_logger
 from lexiconweaver.providers import LLMProviderManager
 from lexiconweaver.tui.app import LexiconWeaverApp
-from lexiconweaver.utils.validators import validate_text_file
+from lexiconweaver.utils.document_loader import load_document
+from lexiconweaver.utils.document_writer import write_document
 
 app = typer.Typer(name="lexiconweaver", help="LexiconWeaver: Web Novel Translation Framework")
 console = Console()
@@ -204,7 +205,7 @@ def project(
 
 @app.command()
 def scout(
-    file: Path = typer.Argument(..., help="Text file to analyze"),
+    file: Path = typer.Argument(..., help="Text, EPUB, or PDF file to analyze"),
     project_name: Optional[str] = typer.Option(None, "--project", "-p", help="Project name"),
     output: Optional[Path] = typer.Option(None, "--output", "-o", help="Output file for results"),
     min_confidence: float = typer.Option(0.3, "--min-confidence", help="Minimum confidence score"),
@@ -218,10 +219,7 @@ def scout(
 
         project = get_project(project_name)
 
-        file_path, encoding = validate_text_file(file)
-
-        with open(file_path, "r", encoding=encoding) as f:
-            text = f.read()
+        text = load_document(file)
 
         with console.status("[bold green]Running Scout..."):
             scout_engine = Scout(config, project)
@@ -268,7 +266,7 @@ def scout(
 
 @app.command("smart-scout")
 def smart_scout(
-    file: Path = typer.Argument(..., help="Text file to analyze"),
+    file: Path = typer.Argument(..., help="Text, EPUB, or PDF file to analyze"),
     project_name: Optional[str] = typer.Option(None, "--project", "-p", help="Project name"),
     output: Optional[Path] = typer.Option(None, "--output", "-o", help="Output file for results (JSON)"),
     interactive: bool = typer.Option(False, "--interactive", "-i", help="Interactive mode for term approval"),
@@ -281,10 +279,7 @@ def smart_scout(
 
         project = get_project(project_name)
 
-        file_path, encoding = validate_text_file(file)
-
-        with open(file_path, "r", encoding=encoding) as f:
-            text = f.read()
+        text = load_document(file)
 
         console.print("[bold cyan]Smart Scout: Two-pass term discovery with LLM[/bold cyan]")
         console.print(f"Provider: {config.provider.primary}")
@@ -610,9 +605,12 @@ def approve_terms(
 
 @app.command()
 def translate(
-    file: Path = typer.Argument(..., help="Text file to translate"),
+    file: Path = typer.Argument(..., help="Text, EPUB, or PDF file to translate"),
     project_name: Optional[str] = typer.Option(None, "--project", "-p", help="Project name"),
-    output: Optional[Path] = typer.Option(None, "--output", "-o", help="Output file for translation"),
+    output: Optional[Path] = typer.Option(
+        None, "--output", "-o",
+        help="Output file for translation (format from extension: .txt, .pdf, or .epub)",
+    ),
 ):
     """Translate text using Weaver engine."""
     try:
@@ -622,10 +620,7 @@ def translate(
 
         project = get_project(project_name)
 
-        file_path, encoding = validate_text_file(file)
-
-        with open(file_path, "r", encoding=encoding) as f:
-            text = f.read()
+        text = load_document(file)
 
         console.print(f"[bold cyan]Translating with provider: {config.provider.primary}[/bold cyan]")
         if config.provider.fallback != "none":
@@ -642,8 +637,7 @@ def translate(
             progress.update(task, completed=True)
 
         if output:
-            with open(output, "w", encoding="utf-8") as f:
-                f.write(translation)
+            write_document(output, translation, title=file.stem if file else "Translation")
             console.print(f"[green]Translation saved to {output}[/green]")
         else:
             console.print("\n[bold]Translation:[/bold]")
@@ -662,7 +656,7 @@ def translate(
 
 @app.command()
 def tui(
-    file: Optional[Path] = typer.Argument(None, help="Text file to open"),
+    file: Optional[Path] = typer.Argument(None, help="Text, EPUB, or PDF file to open"),
     project_name: Optional[str] = typer.Option(None, "--project", "-p", help="Project name"),
 ):
     """Launch the Textual TUI interface."""
@@ -674,13 +668,10 @@ def tui(
         project = get_project(project_name)
 
         text = ""
+        text_file: Optional[Path] = None
         if file:
-            file_path, encoding = validate_text_file(file)
-            with open(file_path, "r", encoding=encoding) as f:
-                text = f.read()
-            text_file = file_path
-        else:
-            text_file = None
+            text = load_document(file)
+            text_file = file
 
         tui_app = LexiconWeaverApp(config, project, text=text, text_file=text_file)
         tui_app.run()

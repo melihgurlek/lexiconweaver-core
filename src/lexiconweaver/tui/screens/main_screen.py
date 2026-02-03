@@ -17,6 +17,7 @@ from lexiconweaver.tui.widgets.candidate_list import CandidateList
 from lexiconweaver.tui.widgets.term_modal import TermModal
 from lexiconweaver.tui.widgets.text_panel import TextPanel
 from lexiconweaver.utils.cache import get_cache
+from lexiconweaver.utils.document_loader import load_document
 from lexiconweaver.utils.highlighting import highlight_terms
 
 logger = get_logger(__name__)
@@ -141,8 +142,7 @@ class MainScreen(Screen):
         logger.debug("Loading text", text_file=str(self._text_file) if self._text_file else None)
         if self._text_file and self._text_file.exists():
             try:
-                with open(self._text_file, "r", encoding="utf-8") as f:
-                    self._text = f.read()
+                self._text = load_document(self._text_file)
                 logger.debug("Text loaded from file", length=len(self._text))
             except Exception as e:
                 logger.exception("Error loading file", file=str(self._text_file), error=str(e))
