@@ -18,9 +18,10 @@ class ExportModal(Container):
 
     DEFAULT_CSS = """
     ExportModal {
-        width: 70;
+        width: 72;
         height: auto;
-        max-height: 20;
+        min-height: 16;
+        max-height: 22;
         border: thick $primary;
         background: $surface;
     }
@@ -38,13 +39,21 @@ class ExportModal(Container):
         width: 100%;
     }
 
+    ExportModal #export_path {
+        width: 1fr;
+        min-height: 3;
+        margin: 1 0;
+        border: solid $primary;
+    }
+
     ExportModal Input {
         width: 1fr;
         margin: 1 0;
     }
 
     ExportModal Select {
-        width: 1fr;
+        width: 24;
+        max-width: 1fr;
         margin: 1 0;
     }
 
@@ -93,20 +102,20 @@ class ExportModal(Container):
         return (p.parent if p.parent else Path.cwd()) / f"{base}.{fmt}"
 
     def compose(self):
-        """Compose the modal widgets."""
+        """Compose the modal widgets. Path input is first so it gets focus and Enter confirms export."""
         with Vertical():
-            yield Label("Export format:", classes="section_label")
-            yield Select(
-                options=EXPORT_FORMATS,
-                value=self._default_format,
-                id="export_format",
-            )
             yield Label("Output path:", classes="section_label")
             initial_path = self._path_for_format(self._default_format)
             yield Input(
                 value=str(initial_path),
                 placeholder="Path to save translation...",
                 id="export_path",
+            )
+            yield Label("Export format:", classes="section_label")
+            yield Select(
+                options=EXPORT_FORMATS,
+                value=self._default_format,
+                id="export_format",
             )
             with Horizontal(classes="action-buttons"):
                 yield Button("Export", variant="primary", id="export_button")
