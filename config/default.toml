@@ -71,5 +71,5 @@ llm_batch_size = 50
 streaming = true
 # Maximum context window size (in tokens, approximate)
 max_context_tokens = 4096
-translation_batch_max_chars = 6000
+translation_batch_max_chars = 3500
 translation_context_sentences = 2
