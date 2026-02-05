@@ -3,6 +3,9 @@ import os
 from pathlib import Path
 
 from lexiconweaver.exceptions import ValidationError
+from lexiconweaver.logging_config import get_logger
+
+logger = get_logger(__name__)
 
 SUPPORTED_EXPORT_EXTENSIONS = (".txt", ".pdf", ".epub")
 
@@ -74,11 +77,30 @@ def _write_pdf(path: Path, text: str, title: str = "Translation") -> None:
 
     font_path = _get_unicode_font_path()
     
+    # Check if text contains non-ASCII characters
+    has_unicode = any(ord(c) > 127 for c in text)
+    
     if font_path:
-        pdf.add_font("BodyFont", style="", fname=str(font_path))
-        pdf.set_font("BodyFont", size=12)
+        try:
+            pdf.add_font("BodyFont", style="", fname=str(font_path), uni=True)
+            pdf.set_font("BodyFont", size=12)
+            logger.debug("Using Unicode font for PDF export", font_path=str(font_path))
+        except Exception as e:
+            if has_unicode:
+                raise ValidationError(
+                    f"Failed to load Unicode font for PDF export. "
+                    f"Font path: {font_path}, Error: {e}. "
+                    f"Please ensure Noto Sans or DejaVu Sans is installed."
+                ) from e
+            logger.warning("Failed to load Unicode font, falling back to Helvetica", font_path=str(font_path), error=str(e))
+            pdf.set_font("Helvetica", size=12)
     else:
-        print("WARNING: No Unicode font found. PDF export may fail on special characters.")
+        if has_unicode:
+            raise ValidationError(
+                "PDF export requires a Unicode font (Noto Sans or DejaVu Sans) for non-ASCII characters. "
+                "Please install Noto Sans fonts or use TXT export instead."
+            )
+        logger.warning("No Unicode font found. PDF export may fail on special characters.")
         pdf.set_font("Helvetica", size=12)
 
     pdf.set_font_size(16)

@@ -215,6 +215,15 @@ class Weaver(BaseEngine):
         match_text = text.replace("\u00a0", " ")
         found_terms = keyword_processor.extract_keywords(match_text)
         
+        text_lower = match_text.lower()
+        for source_term_lower, target_term in term_map.items():
+            if source_term_lower in text_lower:
+                source_variants = [source_term_lower, source_term_lower.capitalize(), source_term_lower.title()]
+                for variant in source_variants:
+                    if variant in match_text or variant.lower() in text_lower:
+                        found_terms.add(variant)
+                        break
+        
         mini_glossary: dict[str, str] = {}
         for found_term in dict.fromkeys(found_terms):
             target = term_map.get(found_term.lower())
@@ -226,7 +235,10 @@ class Weaver(BaseEngine):
     def _verify_translation(
         self, source: str, translation: str, mini_glossary: dict[str, str]
     ) -> None:
-        """Verify that all glossary terms in source appear in translation."""
+        """Verify that all glossary terms in source appear in translation.
+        
+        Uses lenient matching to account for Turkish suffixes and variations.
+        """
         missing_terms: list[str] = []
 
         source_lower = source.lower()
@@ -242,14 +254,23 @@ class Weaver(BaseEngine):
             if target_term_lower in translation_lower:
                 continue
 
+
+            found = False
             if len(target_term_lower) >= 4:
                 root_len = int(len(target_term_lower) * 0.7)
                 root_guess = target_term_lower[:root_len]
                 
                 if root_guess in translation_lower:
-                    continue
+                    found = True
+                else:
+                    translation_words = translation_lower.split()
+                    for word in translation_words:
+                        if root_guess in word or word.startswith(root_guess):
+                            found = True
+                            break
 
-            missing_terms.append(source_term)
+            if not found:
+                missing_terms.append(source_term)
 
         if missing_terms:
             logger.warning(
