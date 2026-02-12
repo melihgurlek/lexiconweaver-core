@@ -107,14 +107,31 @@ class BatchManager:
                 logger.info("Scout complete, stopping for user review")
                 return results
             
+            if mode == "full" and not auto_approve_terms and results.get("proposals_saved", 0) > 0:
+                from lexiconweaver.database.models import ProposedTerm
+
+                pending_count = ProposedTerm.select().where(
+                    ProposedTerm.project == self.project,
+                    ProposedTerm.status == "pending"
+                ).count()
+                if pending_count > 0:
+                    results["pending_review"] = True
+                    results["pending_count"] = pending_count
+                    logger.info(
+                        "Stopping before translation: %s term(s) pending review. "
+                        "Review with approve-terms, then run with --mode translate_only",
+                        pending_count,
+                    )
+                    return results
+
             if mode == "full" and auto_approve_terms and results.get("proposals_saved", 0) > 0:
                 from lexiconweaver.database.models import ProposedTerm, GlossaryTerm
-                
+
                 pending = ProposedTerm.select().where(
                     ProposedTerm.project == self.project,
                     ProposedTerm.status == "pending"
                 )
-                
+
                 approved_count = 0
                 for proposal in pending:
                     try:

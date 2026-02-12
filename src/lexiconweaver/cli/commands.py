@@ -312,8 +312,8 @@ def smart_scout(
                     console.print(f"  [dim]Context:[/dim] {term.context_snippet[:100]}...")
 
                 action = Prompt.ask(
-                    "\n  Action",
-                    choices=["a", "m", "r", "s", "q"],
+                    "\n  [A]pprove / [M]odify / [R]eject / [I]gnore (not a term) / [S]kip / [Q]uit",
+                    choices=["a", "m", "r", "i", "s", "q"],
                     default="a",
                 )
 
@@ -347,6 +347,12 @@ def smart_scout(
                     _update_proposal_status(project, term.source_term, "rejected")
                     rejected_count += 1
                     console.print("  [red]Rejected[/red]")
+
+                elif action == "i":  # Ignore
+                    IgnoredTerm.get_or_create(project=project, term=term.source_term)
+                    _update_proposal_status(project, term.source_term, "rejected")
+                    rejected_count += 1
+                    console.print("  [dim]Ignored (not a special term — translate freely)[/dim]")
 
                 elif action == "s":  # Skip
                     console.print("  [dim]Skipped[/dim]")
@@ -525,8 +531,8 @@ def approve_terms(
                     console.print(f"  [dim]Context:[/dim] {proposal.context_snippet[:100]}...")
 
                 action = Prompt.ask(
-                    "\n  [A]pprove / [M]odify / [R]eject / [S]kip / [Q]uit",
-                    choices=["a", "m", "r", "s", "q"],
+                    "\n  [A]pprove / [M]odify / [R]eject / [I]gnore (not a term) / [S]kip / [Q]uit",
+                    choices=["a", "m", "r", "i", "s", "q"],
                     default="a",
                 )
 
@@ -562,6 +568,16 @@ def approve_terms(
                     proposal.save()
                     rejected += 1
                     console.print("  [red]Rejected[/red]")
+
+                elif action == "i":
+                    IgnoredTerm.get_or_create(
+                        project=project,
+                        term=proposal.source_term,
+                    )
+                    proposal.status = "rejected"
+                    proposal.save()
+                    rejected += 1
+                    console.print("  [dim]Ignored (not a special term — translate freely)[/dim]")
 
                 elif action == "s":
                     console.print("  [dim]Skipped[/dim]")
@@ -766,6 +782,22 @@ def batch_translate(
         )
         
         main_progress.stop()
+
+        if results.get("pending_review"):
+            console.print("\n[bold yellow]⏸ Terms pending review — translate after approving[/bold yellow]\n")
+            results_table = Table(title="Results Summary")
+            results_table.add_column("Metric", style="cyan")
+            results_table.add_column("Value", style="green")
+            results_table.add_row("Chapters Found", str(results["chapters_found"]))
+            results_table.add_row("Chapters Scouted", str(results["chapters_scouted"]))
+            results_table.add_row("Terms Discovered", str(results["terms_discovered"]))
+            results_table.add_row("Proposals for Review", str(results.get("pending_count", 0)))
+            console.print(results_table)
+            console.print("\n[yellow]Review and approve terms first, then run translation:[/yellow]")
+            console.print(f"  1. [cyan]lexiconweaver approve-terms --project \"{project_name}\" --interactive[/cyan]")
+            console.print(f"  2. [cyan]lexiconweaver batch-translate {workspace} --project \"{project_name}\" --mode translate_only[/cyan]")
+            return
+
         console.print("\n[bold green]✓ Batch Processing Complete![/bold green]\n")
         
         results_table = Table(title="Results Summary")
@@ -795,19 +827,6 @@ def batch_translate(
         # Show auto-approve status if it happened
         if auto_approve and results.get("auto_approved", 0) > 0:
             console.print(f"\n[green]✓[/green] Auto-approved {results['auto_approved']} terms (used in translation)")
-        
-        # Warn about pending terms if not auto-approved
-        if mode == "full" and results.get("proposals_saved", 0) > 0 and not auto_approve:
-            pending_count = ProposedTerm.select().where(
-                ProposedTerm.project == project,
-                ProposedTerm.status == "pending"
-            ).count()
-            
-            if pending_count > 0:
-                console.print(f"\n[yellow]⚠️  {pending_count} terms are pending review![/yellow]")
-                console.print("   Translations used existing glossary only.")
-                console.print("   To review and approve new terms:")
-                console.print(f"   [cyan]lexiconweaver approve-terms --project \"{project_name}\" --interactive[/cyan]")
         
     except LexiconWeaverError as e:
         console.print(f"\n[red]Error: {e.message}[/red]")
