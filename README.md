@@ -205,7 +205,7 @@ WeaveCodex/
 
 ## License
 
-MIT License
+AGPLv3 License
 
 ## Contributing
 
