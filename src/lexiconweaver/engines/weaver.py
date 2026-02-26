@@ -93,6 +93,7 @@ class Weaver(BaseEngine):
         "5. **Formatting & Terms:**\n"
         "   - **START IMMEDIATELY:** Do not repeat the input headers ('### SÖZLÜK', '### BAĞLAM', etc.).\n"
         "   - Use glossary Root Forms but apply correct suffixes (e.g., 'Qi' -> 'Qi'yi').\n"
+        "   - **Contextual translations:** If a glossary entry shows alternatives separated by ' / ' (e.g., 'A -> X / Y'), choose the ONE that fits the context best. Output only that option, not the full string.\n"
         "   - **NO** markdown artifacts ('***', '-break-', '-ara-').\n"
         "   - Output **ONLY** the Turkish translation. If you output headers, you FAIL."
     )
@@ -403,18 +404,19 @@ class Weaver(BaseEngine):
             
             "5. **Formatting & Terms:**\n"
             "   - Use glossary Root Forms but apply correct suffixes (e.g., 'Qi' -> 'Qi'yi').\n"
+            "   - **Contextual translations:** If a glossary entry shows alternatives separated by ' / ' (e.g., 'A -> X / Y'), choose the ONE that fits the context best. Output only that option, not the full string.\n"
             "   - **NO** markdown artifacts ('***', '-break-', '-ara-').\n"
         )
         
         user_content = (
             "### ADDITIONAL TASK (CRITICAL): This is the beginning of a chapter. Extract the chapter title from the first line/heading.\n"
             "Output format:\n"
-            "TITLE: [Extracted Chapter Title]\n"
+            f"TITLE: Chapter {chapter_num}: [Extracted Chapter Title]\n"
             "---\n"
             "[Translation text here]\n\n"
             
-            f"If no clear title exists, use \"Chapter {chapter_num}\" as the title.\n"
-            "CRITICAL: Start with \"TITLE:\" on the first line, then \"---\" separator, then the translation.\n\n"
+            f"If no clear title exists, use \"TITLE: Chapter {chapter_num}\".\n"
+            "CRITICAL: Include the chapter number in the title. Start with \"TITLE:\" on the first line, then \"---\" separator, then the translation.\n\n"
             
             "### GLOSSARY (Use as Roots):\n"
             f"{glossary_block}\n\n"
@@ -460,7 +462,11 @@ class Weaver(BaseEngine):
             translation_lines = lines
         
         if title and title.strip():
-            full_title = f"Chapter {chapter_num}: {title}"
+            # Avoid duplicating "Chapter N" if LLM already included it
+            if title.strip().startswith(f"Chapter {chapter_num}"):
+                full_title = title.strip()
+            else:
+                full_title = f"Chapter {chapter_num}: {title.strip()}"
         else:
             full_title = f"Chapter {chapter_num}"
             logger.info(f"No title found, using fallback: {full_title}")
