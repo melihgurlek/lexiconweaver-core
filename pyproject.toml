@@ -53,7 +53,7 @@ packages = {find = {where = ["src"]}}
 package-dir = {"" = "src"}
 
 [tool.setuptools.package-data]
-lexiconweaver = ["py.typed", "assets/fonts/**/*.ttf"]
+lexiconweaver = ["py.typed", "default_config.toml", "assets/fonts/**/*.ttf"]
 
 [tool.black]
 line-length = 100

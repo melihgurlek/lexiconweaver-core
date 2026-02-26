@@ -2,6 +2,7 @@
 
 import asyncio
 import json
+from importlib.resources import files
 from pathlib import Path
 from typing import Optional
 
@@ -32,6 +33,8 @@ from lexiconweaver.utils.document_loader import load_document
 from lexiconweaver.utils.document_writer import write_document
 
 app = typer.Typer(name="lexiconweaver", help="LexiconWeaver: Web Novel Translation Framework")
+config_app = typer.Typer(help="Configuration management")
+app.add_typer(config_app, name="config")
 console = Console()
 logger = get_logger(__name__)
 
@@ -54,6 +57,36 @@ def get_project(project_name: Optional[str] = None) -> Project:
             project = Project.create(title="default")
             console.print(f"[yellow]Created default project[/yellow]")
         return project
+
+
+@config_app.command("path")
+def config_path_cmd() -> None:
+    """Show where LexiconWeaver reads its config from."""
+    path = Config.get_config_path()
+    console.print(str(path))
+
+
+@config_app.command("init")
+def config_init(
+    force: bool = typer.Option(False, "--force", "-f", help="Overwrite existing config file"),
+) -> None:
+    """Write a template config file to the standard config path."""
+    path = Config.get_config_path()
+    path.parent.mkdir(parents=True, exist_ok=True)
+
+    if path.exists() and not force:
+        console.print(f"[yellow]Config already exists at:[/yellow] {path}")
+        console.print("[dim]Use --force to overwrite[/dim]")
+        return
+
+    try:
+        template = (files("lexiconweaver") / "default_config.toml").read_text(encoding="utf-8")
+    except Exception as e:
+        console.print(f"[red]Failed to load template: {e}[/red]")
+        raise typer.Exit(1)
+
+    path.write_text(template, encoding="utf-8")
+    console.print(f"[green]Wrote config to:[/green] {path}")
 
 
 @app.command("test-connection")

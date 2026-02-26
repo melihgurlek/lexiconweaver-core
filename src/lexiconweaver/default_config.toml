@@ -1,0 +1,90 @@
+# Default LexiconWeaver Configuration
+# Copy to the path shown by: lexiconweaver config path
+
+[ollama]
+# Ollama server URL
+url = "http://localhost:11434"
+# Model name to use for translation
+model = "llama3.1"
+# Request timeout in seconds
+timeout = 300
+# Maximum retries for failed requests
+max_retries = 3
+
+[deepseek]
+# DeepSeek API key - set via LEXICONWEAVER_DEEPSEEK__API_KEY environment variable for security
+api_key = ""
+# DeepSeek model name (V3 is "deepseek-chat")
+model = "deepseek-chat"
+# DeepSeek API base URL
+base_url = "https://api.deepseek.com"
+# Request timeout in seconds
+timeout = 120
+# Maximum retries for failed requests
+max_retries = 3
+
+[provider]
+# Primary LLM provider: "ollama" or "deepseek"
+primary = "ollama"
+# Fallback provider when primary fails: "ollama", "deepseek", or "none"
+fallback = "none"
+# Use fallback on provider errors
+fallback_on_error = true
+
+[database]
+# Path to the SQLite database file
+# If relative, will be resolved relative to the project directory
+# If not specified, defaults to ~/.local/share/lexiconweaver/lexiconweaver.db
+path = ""
+
+[logging]
+# Log level: DEBUG, INFO, WARNING, ERROR, CRITICAL
+level = "INFO"
+# Enable JSON logging format (for production)
+json_logging = false
+# Log file path (leave empty for no file logging)
+log_file = ""
+
+[cache]
+# Enable translation caching
+enabled = true
+# Maximum cache size (number of entries)
+max_size = 10000
+
+[scout]
+# Minimum confidence score (0.0-1.0) for a term to be suggested
+min_confidence = 0.3
+# Maximum N-gram size for term extraction
+max_ngram_size = 4
+# Enable POS tagging filter (requires spacy model)
+use_pos_filter = true
+# Enable two-pass LLM refinement for Smart Scout
+use_llm_refinement = true
+# Number of terms per LLM API call (for batching performance)
+llm_batch_size = 50
+
+[weaver]
+# Enable streaming responses from LLM
+streaming = true
+# Maximum context window size (in tokens, approximate)
+max_context_tokens = 4096
+translation_batch_max_chars = 3500
+translation_context_sentences = 2
+
+[batch]
+# Maximum chapters to translate in parallel
+max_parallel_chapters = 5
+max_parallel_batches = 1
+rate_limit_rpm = 60
+rate_limit_backoff_base = 2
+rate_limit_max_wait = 60
+scout_min_frequency = 3
+scout_burst_threshold = 5
+scout_burst_window_size = 3
+scout_llm_refine_top_percent = 20
+extract_chapter_titles = true
+fallback_to_filename = true
+input_folder = "input"
+output_folder = "output"
+merged_folder = "merged"
+metadata_folder = ".weavecodex"

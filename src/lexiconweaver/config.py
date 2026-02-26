@@ -235,7 +235,12 @@ class Config(BaseSettings):
         return cls(**config_data)
 
     @staticmethod
-    def _get_default_config_path() -> Optional[Path]:
+    def get_config_path() -> Path:
+        """Return the path where config is read from (and init writes to)."""
+        return Config._get_default_config_path()
+
+    @staticmethod
+    def _get_default_config_path() -> Path:
         """Get the default configuration file path."""
         if os.name == "nt":  # Windows
             config_dir = Path(os.getenv("APPDATA", "")) / "lexiconweaver"
