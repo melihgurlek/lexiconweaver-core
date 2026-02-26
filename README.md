@@ -54,7 +54,14 @@ python -m spacy download en_core_web_sm
 
 ### 1. Configure LexiconWeaver
 
-Create a configuration file at `~/.config/lexiconweaver/config.toml`:
+Create a configuration file (or use the template):
+
+```bash
+lexiconweaver config init
+lexiconweaver config path
+```
+
+Or manually create `~/.config/lexiconweaver/config.toml`:
 
 ```toml
 [ollama]
@@ -114,6 +121,10 @@ The TUI provides an interactive workspace:
 ### CLI Commands
 
 ```bash
+# Config
+lexiconweaver config path
+lexiconweaver config init [--force]
+
 # Project management
 lexiconweaver project create <name>
 lexiconweaver project list
@@ -150,6 +161,10 @@ Configuration can be provided via:
 
 1. **TOML file**: `~/.config/lexiconweaver/config.toml` (Linux/Mac) or `%APPDATA%/lexiconweaver/config.toml` (Windows)
 2. **Environment variables**: Prefix with `LEXICONWEAVER_` (e.g., `LEXICONWEAVER_OLLAMA__URL=http://localhost:11434`)
+
+**Config commands:**
+- `lexiconweaver config path` — Show where config is read from
+- `lexiconweaver config init` — Write a template config file (use `--force` to overwrite)
 
 See `config/default.toml` for all available options.
 
