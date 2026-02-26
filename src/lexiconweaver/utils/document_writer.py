@@ -16,7 +16,7 @@ def _get_unicode_font_path() -> Path | None:
     1. Bundled project asset (../assets/fonts/NotoSans-Regular.ttf)
     2. System font locations
     """
-    base_dir = Path(__file__).parent.parent
+    base_dir = Path(__file__).resolve().parent.parent
     bundled_font = base_dir / "assets" / "fonts" / "NotoSans-VariableFont_wdth,wght.ttf"
     
     if bundled_font.is_file():
